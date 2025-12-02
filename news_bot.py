@@ -23,7 +23,7 @@ class InfoMonitor:
         self.bot_token = bot_token
         self.news_collector = NewsCollector()
         self.scheduler = AsyncIOScheduler()
-        self.user_news_state = {}  # {user_id: {'news_list': [...], 'current_index': 0}}
+        self.user_news_state = {}  # {user_id: {'news_list': [...], 'current_index': 0, 'category': None}}
         
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
@@ -36,17 +36,11 @@ class InfoMonitor:
 • /news - получить новости прямо сейчас
 • /help - справка по командам
 
-📊 Источники новостей:
-• РИА Новости
-• ТАСС
-• Лента.ру
-• Ведомости
-• РБК
-• Коммерсантъ
-• Известия
-• Газета.ру
-• RT
-• Интерфакс
+📊 Источники новостей (17 источников):
+• Политика: РИА Новости, ТАСС, Известия, Газета.ру, RT, Интерфакс, Регнум, Независимая Газета
+• Бизнес: Ведомости, РБК, Коммерсантъ, Интерфакс
+• Технологии: РБК, ForkLog, Bits.Media, Хабр, DTF
+• Развлечения: Лента.ру, Афиша, Kanobu, Игромания, StopGame, Игры@Mail.ru, DTF
 
 Бот работает 24/7 и автоматически собирает последние новости!
         """
@@ -64,23 +58,18 @@ class InfoMonitor:
 
 📰 *Основные команды:*
 • `/news` - получить последние новости
+• `/categories` - выбрать категорию новостей
 • `/start` - начать работу с ботом
 • `/help` - показать эту справку
 
 ⏰ *Автоматическая рассылка:*
 Новости приходят каждый день в 9:00 утра (MSK)
 
-📊 *Источники новостей:*
-• РИА Новости
-• ТАСС
-• Лента.ру
-• Ведомости
-• РБК
-• Коммерсантъ
-• Известия
-• Газета.ру
-• RT
-• Интерфакс
+📊 *Источники новостей (17 источников):*
+• Политика: РИА Новости, ТАСС, Известия, Газета.ру, RT, Интерфакс, Регнум, Независимая Газета
+• Бизнес: Ведомости, РБК, Коммерсантъ, Интерфакс
+• Технологии: РБК, ForkLog, Bits.Media, Хабр, DTF
+• Развлечения: Лента.ру, Афиша, Kanobu, Игромания, StopGame, Игры@Mail.ru, DTF
         """
 
         # Создаем постоянную клавиатуру с кнопкой для получения новостей
@@ -95,7 +84,10 @@ class InfoMonitor:
         await update.message.reply_text("📡 Собираю последние новости...")
 
         try:
-            news_list = self.news_collector.get_latest_news(limit=10)
+            # Получаем выбранную категорию пользователя
+            user_category = self.user_news_state.get(user_id, {}).get('category')
+
+            news_list = self.news_collector.get_latest_news(limit=10, category=user_category)
             if not news_list:
                 await update.message.reply_text("😔 К сожалению, не удалось получить новости. Попробуйте позже.")
                 return
@@ -103,7 +95,8 @@ class InfoMonitor:
             # Сохраняем состояние новостей для пользователя
             self.user_news_state[user_id] = {
                 'news_list': news_list,
-                'current_index': 0
+                'current_index': 0,
+                'category': user_category
             }
 
             # Показываем первую новость с клавиатурой
@@ -149,14 +142,51 @@ class InfoMonitor:
             await update.callback_query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
         else:
             await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
-
-    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    
+        async def categories_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+            """Команда /categories - выбор категории новостей"""
+            user_id = update.effective_user.id
+    
+            # Создаем клавиатуру с категориями
+            keyboard = []
+            for cat_key, cat_name in self.news_collector.categories.items():
+                keyboard.append([InlineKeyboardButton(f"📂 {cat_name}", callback_data=f"cat_{cat_key}")])
+            keyboard.append([InlineKeyboardButton("🔄 Все новости", callback_data="cat_all")])
+    
+            reply_markup = InlineKeyboardMarkup(keyboard)
+    
+            current_category = self.user_news_state.get(user_id, {}).get('category')
+            if current_category:
+                cat_name = self.news_collector.categories.get(current_category, "Неизвестная")
+                text = f"Выберите категорию новостей:\n\nТекущая категория: {cat_name}"
+            else:
+                text = "Выберите категорию новостей:"
+    
+            await update.message.reply_text(text, reply_markup=reply_markup)
+    
+        async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка callback запросов от inline клавиатуры"""
         query = update.callback_query
         await query.answer()
 
         user_id = query.from_user.id
         data = query.data
+
+        if data.startswith("cat_"):
+            # Обработка выбора категории
+            category = data[4:]  # Убираем "cat_" префикс
+            if category == "all":
+                category = None
+
+            # Сохраняем выбранную категорию
+            if user_id not in self.user_news_state:
+                self.user_news_state[user_id] = {'category': category}
+            else:
+                self.user_news_state[user_id]['category'] = category
+
+            cat_name = "Все новости" if category is None else self.news_collector.categories.get(category, "Неизвестная")
+            await query.edit_message_text(f"✅ Категория установлена: {cat_name}\n\nИспользуйте /news для получения новостей.")
+            return
 
         if user_id not in self.user_news_state:
             await query.edit_message_text("😔 Сессия новостей истекла. Используйте /news для получения свежих новостей.")
@@ -227,6 +257,7 @@ class InfoMonitor:
         application.add_handler(CommandHandler("start", self.start))
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("news", self.news_command))
+        application.add_handler(CommandHandler("categories", self.categories_command))
 
         # Добавляем обработчик callback запросов
         application.add_handler(CallbackQueryHandler(self.handle_callback))
