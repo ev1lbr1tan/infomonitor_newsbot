@@ -142,29 +142,29 @@ class InfoMonitor:
             await update.callback_query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
         else:
             await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
-    
-        async def categories_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-            """Команда /categories - выбор категории новостей"""
-            user_id = update.effective_user.id
-    
-            # Создаем клавиатуру с категориями
-            keyboard = []
-            for cat_key, cat_name in self.news_collector.categories.items():
-                keyboard.append([InlineKeyboardButton(f"📂 {cat_name}", callback_data=f"cat_{cat_key}")])
-            keyboard.append([InlineKeyboardButton("🔄 Все новости", callback_data="cat_all")])
-    
-            reply_markup = InlineKeyboardMarkup(keyboard)
-    
-            current_category = self.user_news_state.get(user_id, {}).get('category')
-            if current_category:
-                cat_name = self.news_collector.categories.get(current_category, "Неизвестная")
-                text = f"Выберите категорию новостей:\n\nТекущая категория: {cat_name}"
-            else:
-                text = "Выберите категорию новостей:"
-    
-            await update.message.reply_text(text, reply_markup=reply_markup)
-    
-        async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    async def categories_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /categories - выбор категории новостей"""
+        user_id = update.effective_user.id
+
+        # Создаем клавиатуру с категориями
+        keyboard = []
+        for cat_key, cat_name in self.news_collector.categories.items():
+            keyboard.append([InlineKeyboardButton(f"📂 {cat_name}", callback_data=f"cat_{cat_key}")])
+        keyboard.append([InlineKeyboardButton("🔄 Все новости", callback_data="cat_all")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        current_category = self.user_news_state.get(user_id, {}).get('category')
+        if current_category:
+            cat_name = self.news_collector.categories.get(current_category, "Неизвестная")
+            text = f"Выберите категорию новостей:\n\nТекущая категория: {cat_name}"
+        else:
+            text = "Выберите категорию новостей:"
+
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка callback запросов от inline клавиатуры"""
         query = update.callback_query
         await query.answer()
