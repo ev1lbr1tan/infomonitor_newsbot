@@ -13,7 +13,12 @@ class NewsCollector:
             'tass': 'https://tass.ru/rss/v2.xml',
             'lenta': 'https://lenta.ru/rss/news',
             'vedomosti': 'https://www.vedomosti.ru/rss/news.xml',
-            'rbc': 'https://rssexport.rbc.ru/news/20/5001001/full.rss'
+            'rbc': 'https://rssexport.rbc.ru/news/20/5001001/full.rss',
+            'kommersant': 'https://www.kommersant.ru/rss',
+            'izvestia': 'https://iz.ru/xml/rss/all.xml',
+            'gazeta': 'https://www.gazeta.ru/export/rss/lenta.xml',
+            'rt': 'https://russian.rt.com/rss',
+            'interfax': 'https://www.interfax.ru/rss.asp'
         }
     
     def clean_text(self, text: str, max_length: int = 200) -> str:

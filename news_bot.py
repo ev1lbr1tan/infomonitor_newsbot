@@ -35,7 +35,6 @@ class InfoMonitor:
 📰 *Доступные команды:*
 • /news - получить новости прямо сейчас
 • /help - справка по командам
-• /settings - настройки бота
 
 📊 Источники новостей:
 • РИА Новости
@@ -43,6 +42,11 @@ class InfoMonitor:
 • Лента.ру
 • Ведомости
 • РБК
+• Коммерсантъ
+• Известия
+• Газета.ру
+• RT
+• Интерфакс
 
 Бот работает 24/7 и автоматически собирает последние новости!
         """
@@ -72,9 +76,11 @@ class InfoMonitor:
 • Лента.ру
 • Ведомости
 • РБК
-
-🤔 *Нужна помощь?*
-Просто напишите любое сообщение или используйте команду /news
+• Коммерсантъ
+• Известия
+• Газета.ру
+• RT
+• Интерфакс
         """
 
         # Создаем постоянную клавиатуру с кнопкой для получения новостей
@@ -107,10 +113,13 @@ class InfoMonitor:
             logger.error(f"Ошибка при получении новостей: {e}")
             await update.message.reply_text("😔 Произошла ошибка при получении новостей. Попробуйте позже.")
 
-    async def show_news(self, update: Update, user_id: int):
+    async def show_news(self, update: Update, user_id: int, edit_message=False):
         """Показать текущую новость с клавиатурой навигации"""
         if user_id not in self.user_news_state:
-            await update.message.reply_text("😔 Новости не найдены. Используйте /news для получения новостей.")
+            if edit_message:
+                await update.callback_query.edit_message_text("😔 Новости не найдены. Используйте /news для получения новостей.")
+            else:
+                await update.message.reply_text("😔 Новости не найдены. Используйте /news для получения новостей.")
             return
 
         state = self.user_news_state[user_id]
@@ -118,7 +127,10 @@ class InfoMonitor:
         current_index = state['current_index']
 
         if current_index >= len(news_list):
-            await update.message.reply_text("😔 Больше новостей нет.")
+            if edit_message:
+                await update.callback_query.edit_message_text("😔 Больше новостей нет.")
+            else:
+                await update.message.reply_text("😔 Больше новостей нет.")
             return
 
         news = news_list[current_index]
@@ -133,7 +145,10 @@ class InfoMonitor:
 
         reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
 
-        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+        if edit_message:
+            await update.callback_query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+        else:
+            await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка callback запросов от inline клавиатуры"""
@@ -156,19 +171,7 @@ class InfoMonitor:
             state['current_index'] = max(current_index - 1, 0)
 
         # Обновляем сообщение с новой новостью
-        news = state['news_list'][state['current_index']]
-        message = self.news_collector.format_single_news(news, state['current_index'], len(state['news_list']))
-
-        # Создаем новую клавиатуру
-        keyboard = []
-        if state['current_index'] > 0:
-            keyboard.append(InlineKeyboardButton("⬅️ Прошлая новость", callback_data="prev_news"))
-        if state['current_index'] < len(state['news_list']) - 1:
-            keyboard.append(InlineKeyboardButton("Следующая новость ➡️", callback_data="next_news"))
-
-        reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
-
-        await query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+        await self.show_news(update, user_id, edit_message=True)
 
     async def daily_news_job(self):
         """Задача для ежедневной отправки новостей"""
@@ -202,9 +205,7 @@ class InfoMonitor:
             response = """
 🤖 Я ИнфоМонитор!
 
-📰 Используйте команду `/news` чтобы получить последние новости прямо сейчас!
-
-⏰ Новости также приходят автоматически каждый день в 9:00 утра (MSK).
+Используйте кнопку ниже или команду `/news` для получения новостей.
             """
             await update.message.reply_text(response, parse_mode='Markdown')
             
