@@ -1,8 +1,8 @@
 import os
 import logging
 from datetime import datetime
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import asyncio
@@ -23,6 +23,7 @@ class InfoMonitor:
         self.bot_token = bot_token
         self.news_collector = NewsCollector()
         self.scheduler = AsyncIOScheduler()
+        self.user_news_state = {}  # {user_id: {'news_list': [...], 'current_index': 0}}
         
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
@@ -45,8 +46,12 @@ class InfoMonitor:
 
 Бот работает 24/7 и автоматически собирает последние новости!
         """
-        
-        await update.message.reply_text(welcome_text, parse_mode='Markdown')
+
+        # Создаем постоянную клавиатуру с кнопкой для получения новостей
+        keyboard = [[KeyboardButton("📰 Получить новости")]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+        await update.message.reply_text(welcome_text, parse_mode='Markdown', reply_markup=reply_markup)
         
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
@@ -63,7 +68,7 @@ class InfoMonitor:
 
 📊 *Источники новостей:*
 • РИА Новости
-• ТАСС  
+• ТАСС
 • Лента.ру
 • Ведомости
 • РБК
@@ -71,21 +76,100 @@ class InfoMonitor:
 🤔 *Нужна помощь?*
 Просто напишите любое сообщение или используйте команду /news
         """
-        
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+
+        # Создаем постоянную клавиатуру с кнопкой для получения новостей
+        keyboard = [[KeyboardButton("📰 Получить новости")]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+        await update.message.reply_text(help_text, parse_mode='Markdown', reply_markup=reply_markup)
         
     async def news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /news - получение новостей по запросу"""
+        user_id = update.effective_user.id
         await update.message.reply_text("📡 Собираю последние новости...")
-        
+
         try:
             news_list = self.news_collector.get_latest_news(limit=10)
-            message = self.news_collector.format_news_message(news_list)
-            await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+            if not news_list:
+                await update.message.reply_text("😔 К сожалению, не удалось получить новости. Попробуйте позже.")
+                return
+
+            # Сохраняем состояние новостей для пользователя
+            self.user_news_state[user_id] = {
+                'news_list': news_list,
+                'current_index': 0
+            }
+
+            # Показываем первую новость с клавиатурой
+            await self.show_news(update, user_id)
+
         except Exception as e:
             logger.error(f"Ошибка при получении новостей: {e}")
             await update.message.reply_text("😔 Произошла ошибка при получении новостей. Попробуйте позже.")
-            
+
+    async def show_news(self, update: Update, user_id: int):
+        """Показать текущую новость с клавиатурой навигации"""
+        if user_id not in self.user_news_state:
+            await update.message.reply_text("😔 Новости не найдены. Используйте /news для получения новостей.")
+            return
+
+        state = self.user_news_state[user_id]
+        news_list = state['news_list']
+        current_index = state['current_index']
+
+        if current_index >= len(news_list):
+            await update.message.reply_text("😔 Больше новостей нет.")
+            return
+
+        news = news_list[current_index]
+        message = self.news_collector.format_single_news(news, current_index, len(news_list))
+
+        # Создаем inline клавиатуру
+        keyboard = []
+        if current_index > 0:
+            keyboard.append(InlineKeyboardButton("⬅️ Прошлая новость", callback_data="prev_news"))
+        if current_index < len(news_list) - 1:
+            keyboard.append(InlineKeyboardButton("Следующая новость ➡️", callback_data="next_news"))
+
+        reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
+
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+
+    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка callback запросов от inline клавиатуры"""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = query.from_user.id
+        data = query.data
+
+        if user_id not in self.user_news_state:
+            await query.edit_message_text("😔 Сессия новостей истекла. Используйте /news для получения свежих новостей.")
+            return
+
+        state = self.user_news_state[user_id]
+        current_index = state['current_index']
+
+        if data == "next_news":
+            state['current_index'] = min(current_index + 1, len(state['news_list']) - 1)
+        elif data == "prev_news":
+            state['current_index'] = max(current_index - 1, 0)
+
+        # Обновляем сообщение с новой новостью
+        news = state['news_list'][state['current_index']]
+        message = self.news_collector.format_single_news(news, state['current_index'], len(state['news_list']))
+
+        # Создаем новую клавиатуру
+        keyboard = []
+        if state['current_index'] > 0:
+            keyboard.append(InlineKeyboardButton("⬅️ Прошлая новость", callback_data="prev_news"))
+        if state['current_index'] < len(state['news_list']) - 1:
+            keyboard.append(InlineKeyboardButton("Следующая новость ➡️", callback_data="next_news"))
+
+        reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
+
+        await query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+
     async def daily_news_job(self):
         """Задача для ежедневной отправки новостей"""
         try:
@@ -107,14 +191,16 @@ class InfoMonitor:
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка обычных сообщений"""
         user_message = update.message.text.lower()
-        
-        if any(word in user_message for word in ['новости', 'news', 'что нового']):
+
+        if user_message == "📰 получить новости":
+            await self.news_command(update, context)
+        elif any(word in user_message for word in ['новости', 'news', 'что нового']):
             await self.news_command(update, context)
         elif any(word in user_message for word in ['помощь', 'help', 'справка']):
             await self.help_command(update, context)
         else:
             response = """
-🤖 Я ИнфоМонитор! 
+🤖 Я ИнфоМонитор!
 
 📰 Используйте команду `/news` чтобы получить последние новости прямо сейчас!
 
@@ -140,7 +226,10 @@ class InfoMonitor:
         application.add_handler(CommandHandler("start", self.start))
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("news", self.news_command))
-        
+
+        # Добавляем обработчик callback запросов
+        application.add_handler(CallbackQueryHandler(self.handle_callback))
+
         # Добавляем обработчик сообщений
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         

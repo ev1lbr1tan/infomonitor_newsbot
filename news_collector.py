@@ -57,9 +57,9 @@ class NewsCollector:
         """Форматирование новостей для отправки в Telegram"""
         if not news_list:
             return "😔 К сожалению, не удалось получить новости. Попробуйте позже."
-        
+
         message = "📰 *ТОП НОВОСТИ*\n\n"
-        
+
         for i, news in enumerate(news_list, 1):
             message += f"*{i}. {news['title']}*\n"
             message += f"📝 {news['description']}\n"
@@ -68,6 +68,17 @@ class NewsCollector:
             if news['published']:
                 message += f"🕐 {news['published']}\n"
             message += "\n" + "─" * 50 + "\n\n"
-        
+
         message += f"📊 Показано новостей: {len(news_list)}"
+        return message
+
+    def format_single_news(self, news: Dict, index: int, total: int) -> str:
+        """Форматирование одной новости для отображения с навигацией"""
+        message = f"📰 *{news['title']}*\n\n"
+        message += f"📝 {news['description']}\n"
+        message += f"🔗 [Читать полностью]({news['link']})\n"
+        message += f"📰 Источник: {news['source']}\n"
+        if news['published']:
+            message += f"🕐 {news['published']}\n"
+        message += f"\n📊 Новость {index + 1} из {total}"
         return message
